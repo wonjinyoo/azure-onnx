@@ -1,0 +1,61 @@
+name: Build Docker image and push it to Docker hub registry
+
+on:
+  # run workflow when source code is pushed to main branch
+  push:
+    branches: [main]
+
+  # allow running workflow directly using Action tab in GitHub
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Azure credentials
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Azure extensions and 사용자 입력 대기모드 방지 설정
+        run: |
+          az ml model download \
+            --resource-group Practical-MLOps-Chapter4 \
+            --workspace-name Practical-MLOps-Chapter4 \
+            --name RoBERTa-SequenceClassification \
+            --version 1 \
+            --download-path . && \
+          mv RoBERTa-SequenceClassification/* ./webapp/ && \
+          rm -r RoBERTa-SequenceClassification
+
+      - name: Docker hub login
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Github container registry login
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GH_CONTAINER_REGISTRY }}
+
+      - id: GH_REPOSITORY_OWNER
+        uses: ASzc/change-string-case-action@v5
+        with:
+          string: ${{ github.repository_owner }}
+
+      - name: After container build, push to both Docker hub and Github registry at the same time
+        uses: docker/build-push-action@v2
+        with:
+          context: ./
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ secrets. DOCKER_HUB_USERNAME }}/flask-docker-onnx-azure_x86:v1
+            ghcr.io/${{ steps.GH_REPOSITORY_OWNER.outputs.lowercase }}/flask-docker-onnx-azure_x86:v1
